@@ -1,0 +1,2 @@
+# simple_protein_alignment_with_ggplot
+simple_protein_alignment_with_ggplot
