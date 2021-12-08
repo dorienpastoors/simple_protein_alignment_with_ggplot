@@ -1,5 +1,5 @@
 ---
-title: "Protein alignment and functional domaisn of EP300 and CREBBP"
+title: "Visualising protein alignment in ggplot"
 output:
   html_document:
     toc: yes
@@ -10,28 +10,39 @@ output:
     toc_float: true
 ---
 
-In this entry I am generating plots where you can see the alignment between two proteins (EP300 and CREBBP) as well as their functional domains, to get insight into whether they diverge or are more similar in their domains than in the rest of the protein. 
+While there are probably a thousand-and-one ways to visualise protein alignments already out there, for a presentation I made I wanted to make a super-simple one that I also liked. I wanted to be able to see in one view you where two proteins diverge in sequence and how this relates to the location of their functional domains. While you can of course show a domainogram of two proteins and just say "they are most conserved within their functional domains " , or "domain X is not conserved but domain Y is", you can also actually visualise this! And this is super-easy with ggplot. Whether you know your fasta files from your R notebooks or not, and you actually do not really know where to start with using R as a biologist - this is a very easy way (I think).
+
+In this entry I am generating plots where you can see the alignment between two proteins (RNA polymerase II between human and fruit fly) as well as their functional domains, to get insight into whether they diverge or are more similar in their domains than in the rest of the protein. 
+
+This actually consists of 3 steps. 
+1. Creating the protein alignment
+2. Downloading the domain annotation per protein (i.e. what are their domains called and where are they found)
+3. Visualising the alignment and domain annotation (merging the two bits of information together)
+
+
+For this R notebook I created a protein alignment in Benchling and downloaded it as .fasta. I copied the functional domain annotation from the Pfam database. These files are in this folder: they are called alignment_RPB1_drosophila_human.fasta and functional_domains.txt. 
+
+You can use any kind of website or service you like for the protein alignment of course. It is important for this notebook that both proteins in the .fasta file are equal in length: the benchling file is a .fasta file of the actual alignment (not the protein sequence itself), so there are also gaps (represented by "-") in the fasta files. 
+
+For the functional domain annotation I copied both PFAM tables for each respective protein to Excel, where I added a column indicating which of the two proteins that specific functional domain concerned. I only left the domains that were present in both proteins, but this is not neccessary. I also removed all domains I'm not interested in (i.e. "unstructured regions" etc)
+
 
 # Preparing the workspace
 
 Loading required libraries
 ```{r load libraries, message = FALSE}
 
-library(TFBSTools)
-library(universalmotif)
+
 library(seqinr)
-library(Biostrings)
+#library(Biostrings)
 library(stringr)
 library(tidyverse)
 library(ggrepel)
 library(gridExtra)
 library(reshape2)
 library(ggpubr)
-library(ggridges)
-library(rtracklayer)
-library(ChIPpeakAnno)
-library(zoo)
-library(labeling)
+# library(zoo)
+# library(labeling)
 
 
 
@@ -44,16 +55,14 @@ Set working directories with data sources
 ```{r set working directories, fig.height=3}
 
 
-analysis_direc <- "~/protein_alignments/EP300_CREBBP"
 
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
-presentation_palette <- c("#264653", "#2A9D8F", "#9abf78", "#E9C46A", "#F4A261", "#E76F51", "#68384E")
+ggplot(data = data.frame(x = factor(1:length(cbPalette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = cbPalette)+ theme_classic2()
 
-ggplot(data = data.frame(x = factor(1:length(presentation_palette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = presentation_palette)+ theme_classic2()
-
-# presentation_palette <- c("#264653", "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#8B9F72")
+# cbPalette <- c("#264653", "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#8B9F72")
 # 
-# ggplot(data = data.frame(x = factor(1:length(presentation_palette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = presentation_palette)
+# ggplot(data = data.frame(x = factor(1:length(cbPalette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = cbPalette)
 
 # green-ish color for position 3 "#9abf78"
 
@@ -245,7 +254,7 @@ p1<- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
   theme_classic2()+
   geom_point(data = alignment_frame%>%filter(!is.na(ep300_domain)), aes(color = ep300_domain))+
   geom_point(data = alignment_frame%>%filter(!is.na(crebbp_domain)), aes(y = 0, color = crebbp_domain))+ 
-  scale_color_manual(name = "domain", values = c(presentation_palette, "lightgrey"))+
+  scale_color_manual(name = "domain", values = c(cbPalette, "lightgrey"))+
   scale_y_continuous(breaks = c(0,1), labels = c("CREBBP", "EP300"))+
   xlab("amino acid position in alignment")+ ylab("")+
   theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())
@@ -281,7 +290,7 @@ ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
   theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())+
 
   scale_color_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))+
-  scale_fill_manual(name  = "PFAM domain", values = presentation_palette)
+  scale_fill_manual(name  = "PFAM domain", values = cbPalette)
 
 # only protein
 p1 <- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
@@ -307,7 +316,7 @@ p1 <- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
         plot.background = element_rect(fill = "transparent",colour = NA))+
   xlim(c(0,2550))+
 
-  scale_fill_manual(name  = "PFAM domain", values = presentation_palette)
+  scale_fill_manual(name  = "PFAM domain", values = cbPalette)
 
 
 ggsave("ep300_crebbp_domains_only_geomrect_small.png", p1 + theme(legend.position = "none"), 
@@ -360,7 +369,7 @@ p1<- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
   theme_classic2()+
   #geom_point(data = alignment_frame%>%filter(!is.na(ep300_domain)), aes(color = ep300_domain))+
   #geom_point(data = alignment_frame%>%filter(!is.na(crebbp_domain)), aes(y = 0, color = crebbp_domain))+ 
-  #scale_color_manual(name = "domain", values = c(presentation_palette, "lightgrey"))+
+  #scale_color_manual(name = "domain", values = c(cbPalette, "lightgrey"))+
   scale_y_continuous(breaks = c(0,1), labels = c("CREBBP", "EP300"))+
   xlab("amino acid position in alignment")+ ylab("")+
   theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())
@@ -382,7 +391,7 @@ p1<- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
   theme_classic2()+
   geom_point(data = alignment_frame%>%filter(!is.na(ep300_domain)), aes(color = ep300_domain))+
   geom_point(data = alignment_frame%>%filter(!is.na(crebbp_domain)), aes(y = 0, color = crebbp_domain))+ 
-  scale_color_manual(name = "domain", values = c(presentation_palette, "lightgrey"))+
+  scale_color_manual(name = "domain", values = c(cbPalette, "lightgrey"))+
   scale_y_continuous(breaks = c(0,1), labels = c("CREBBP", "EP300"))+
   xlab("amino acid position in alignment")+ ylab("")+
   theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())
