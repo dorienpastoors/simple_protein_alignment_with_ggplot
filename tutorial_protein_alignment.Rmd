@@ -1,0 +1,399 @@
+---
+title: "Protein alignment and functional domaisn of EP300 and CREBBP"
+output:
+  html_document:
+    toc: yes
+    toc_float: true
+    df_print: paged
+  html_notebook:
+    toc: yes
+    toc_float: true
+---
+
+In this entry I am generating plots where you can see the alignment between two proteins (EP300 and CREBBP) as well as their functional domains, to get insight into whether they diverge or are more similar in their domains than in the rest of the protein. 
+
+# Preparing the workspace
+
+Loading required libraries
+```{r load libraries, message = FALSE}
+
+library(TFBSTools)
+library(universalmotif)
+library(seqinr)
+library(Biostrings)
+library(stringr)
+library(tidyverse)
+library(ggrepel)
+library(gridExtra)
+library(reshape2)
+library(ggpubr)
+library(ggridges)
+library(rtracklayer)
+library(ChIPpeakAnno)
+library(zoo)
+library(labeling)
+
+
+
+options(bitmapType = 'cairo')
+
+```
+
+Set working directories with data sources
+
+```{r set working directories, fig.height=3}
+
+
+analysis_direc <- "~/protein_alignments/EP300_CREBBP"
+
+
+presentation_palette <- c("#264653", "#2A9D8F", "#9abf78", "#E9C46A", "#F4A261", "#E76F51", "#68384E")
+
+ggplot(data = data.frame(x = factor(1:length(presentation_palette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = presentation_palette)+ theme_classic2()
+
+# presentation_palette <- c("#264653", "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#8B9F72")
+# 
+# ggplot(data = data.frame(x = factor(1:length(presentation_palette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = presentation_palette)
+
+# green-ish color for position 3 "#9abf78"
+
+#load("motif_analysis.Rdata")
+```
+# load domain data
+
+I downloaded PFAM domain data from the PFAM database, for both CREBBP and EP300.
+
+
+```{r load functional domains}
+setwd(analysis_direc)
+
+domain_annot <- read.table("functional_domains.txt", header = TRUE)
+
+head(domain_annot)
+```
+
+Domain_annot is now in the form: 
+```
+name        start       end
+domainA     3           5
+
+```
+whereas I need it to be like this: 
+```
+position    domain
+1
+2
+3           domainA
+4           domainA
+5           domainA
+6
+```
+
+In that way I can merge it with the sequence alignment, where I have the position per protein, and the position in the alignment. When I combine these two I will get the position of the domains in the alignment.
+
+```{r convert domains to long format}
+
+
+create_long_annotation <- function(function_domain_df){
+  
+  domain_vec <- c()
+  position_vec <- c()
+  
+  for(i in 1:length(function_domain_df$Domain)){
+    
+    domain_vec <- c(domain_vec, rep(function_domain_df$Domain[i],
+                                    length(function_domain_df$Start[i]:function_domain_df$End[i])))
+    
+    position_vec <- c(position_vec, function_domain_df$Start[i]:function_domain_df$End[i] )
+    
+  }
+  
+  return(data.frame(domain=  domain_vec, position = position_vec))
+  
+}
+
+domain_annot_ep300 <- create_long_annotation(domain_annot%>%filter(protein == "EP300"))
+
+domain_annot_crebbp <- create_long_annotation(domain_annot%>%filter(protein == "CREBBP"))
+
+head(domain_annot_crebbp)
+
+
+factor_order<-c("Creb_binding","HAT_KAT11","DUF902","Bromodomain","KIX","zf-TAZ","ZZ")
+
+domain_annot_ep300$domain <- factor(domain_annot_ep300$domain, levels = factor_order)
+domain_annot_crebbp$domain <- factor(domain_annot_crebbp$domain, levels = factor_order)
+
+
+```
+
+You can see here that for each domain, I have every protein position that is part of that domain.
+# read in sequence alignment
+
+Alignment performed in Benchling. These are the FASTA files from the alignment: they contain the sequence as well as the gaps in the sequences. This means both sequences are the same size: the length of the alignment. 
+I am incorporating them into a single dataframe below, where each row is 1 position in the alignment. With the for loop below I am creating another column which, for each position, contains whether this position represents a match between the two proteins, a mismatch (different AA), or a gap in one of the two sequences. 
+
+```{r read sequence alignment}
+aligned_seqs <- read.fasta("aligment_ep300_crebbp.fasta")
+
+score_vec <- c()
+
+for(i in 1:length(aligned_seqs$`sp|Q92793|CBP_HUMAN`)){
+  if(aligned_seqs$`sp|Q92793|CBP_HUMAN`[i]== "-" | aligned_seqs$`sp|Q09472|EP300_HUMAN`[i] == "-"){
+    score_vec = c(score_vec, "GAP")
+  }
+  
+  
+  else if(aligned_seqs$`sp|Q92793|CBP_HUMAN`[i]==aligned_seqs$`sp|Q09472|EP300_HUMAN`[i]){
+    score_vec = c(score_vec, "MATCH")
+  }
+  
+  else{score_vec = c(score_vec, "MISMATCH")}
+  
+}
+
+
+
+alignment_frame <- data.frame(seq_ep300 = as.character(aligned_seqs$`sp|Q09472|EP300_HUMAN`), 
+                              seq_crebbp = as.character(aligned_seqs$`sp|Q92793|CBP_HUMAN`), 
+                              identity = score_vec, alignment_pos = 1:length(score_vec))
+
+
+head(alignment_frame)
+```
+
+
+I now need to incorporate the positiion of each protein into the alignment dataframe. For example, with this alignment
+
+```
+protA   MM-KM
+        || *|
+protB   MMLSM
+```
+This alignment is 5 AAs long, but the position in protA at the end is only position 4, as there is a gap in the alignment. This is important for the correct annotation of the domains, as I have the domain location only for the original protein position, and not for the alignment position (obviously). So this hypothetical alignment should result in the following dataframe:
+
+```
+alignment_pos   protA   protB   pos_protA   pos_protB
+1               M       M       1           1
+2               M       M       2           2
+3                       L                   3
+4               K       S       3           4
+5               M       M       4           5
+```
+
+Here I make a conversion, where for each alignment position I get the corresponding protein sequence position. I then use this to merge the original alignment dataframe with the new conversion.
+
+```{r create alignment position conversion}
+alignment_frame_ep300 <- alignment_frame%>%filter(seq_ep300 != "-")%>%mutate(ep300_pos = 1:n())%>%select(alignment_pos, ep300_pos)
+
+alignment_frame_crebbp <- alignment_frame%>%filter(seq_crebbp != "-")%>%mutate(crebbp_pos = 1:n())%>%select(alignment_pos, crebbp_pos)
+
+head(alignment_frame_crebbp)
+```
+
+You can see here that due to the gap in the alignment in CREBBP at position 6 of the alignment, this alignment position is not present in the dataframe and alignment position 7 corresponds to crebbp position 6.
+
+I will now merge this with the original dataframe with the alignment
+
+```{r merge alignment with original position}
+alignment_frame <-merge(alignment_frame, alignment_frame_ep300, all.x = TRUE)
+
+alignment_frame <-merge(alignment_frame, alignment_frame_crebbp, all.x = TRUE)
+
+alignment_frame$identity <- factor(alignment_frame$identity)
+
+head(alignment_frame)
+```
+
+Here you can clearly see the gap in the alignment in CREBBP at position 6.
+
+Lastly, I need to incorporate the domain annotation I created a dataframe for before. 
+
+
+```{r merge domain annotations and alignment}
+alignment_frame <- merge(alignment_frame, domain_annot_crebbp, by.x = "crebbp_pos", by.y = "position", all.x = TRUE)
+
+colnames(alignment_frame)[7] = "crebbp_domain" 
+
+alignment_frame <- merge(alignment_frame, domain_annot_ep300, by.x = "ep300_pos", by.y = "position", all.x = TRUE)
+
+colnames(alignment_frame)[8] = "ep300_domain"
+
+write.table(alignment_frame, "alignment_dataframe.txt")
+
+head(alignment_frame)
+```
+There are no domains in the N terminus of the protein, but when filtering for the top tomain in CREBBP we find this annotation: 
+
+```{r}
+head(alignment_frame%>%filter(!is.na(crebbp_domain)))
+```
+
+
+
+# Plotting the result 
+
+I am saving these plots in the working directory in small and large format, as the legend doesnt fit in the small format but is better for the alignment. 
+
+
+```{r plot domains and alignment, , fig.width = 16, fig.height = 3}
+p1<- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
+  geom_rect(aes(xmin = alignment_pos, xmax = alignment_pos +0.99, ymin = 0, ymax = 1, fill = identity), alpha = 0.3)+
+  scale_fill_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))+
+  geom_point(data = alignment_frame%>%filter(!is.na(ep300_pos)), size = 0.2, pch = 15)+
+  geom_point(data = alignment_frame%>%filter(!is.na(crebbp_pos)),aes(y = 0), size = 0.2, pch = 15)+ 
+  theme_classic2()+
+  geom_point(data = alignment_frame%>%filter(!is.na(ep300_domain)), aes(color = ep300_domain))+
+  geom_point(data = alignment_frame%>%filter(!is.na(crebbp_domain)), aes(y = 0, color = crebbp_domain))+ 
+  scale_color_manual(name = "domain", values = c(presentation_palette, "lightgrey"))+
+  scale_y_continuous(breaks = c(0,1), labels = c("CREBBP", "EP300"))+
+  xlab("amino acid position in alignment")+ ylab("")+
+  theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())
+
+
+ggsave("ep300_crebbp_alignment_small.png", width = 10, height = 1)
+ggsave("ep300_crebbp_alignment_large.png", width = 20, height = 4)
+ggsave("ep300_crebbp_alignment_small.pdf", width = 10, height = 1)
+ggsave("ep300_crebbp_alignment_large.pdf", width = 20, height = 4)
+p1
+```
+```{r}
+
+ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
+  geom_rect(data = alignment_frame%>%filter(!is.na(ep300_pos)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.7, ymax = 1), fill = "lightgrey")+
+  geom_rect(data = alignment_frame%>%filter(!is.na(ep300_domain)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.7, ymax = 1, fill = ep300_domain))+
+  
+  geom_rect(data = alignment_frame%>%filter(!is.na(crebbp_pos)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0, ymax = 0.3), fill = "lightgrey")+
+  geom_rect(data = alignment_frame%>%filter(!is.na(crebbp_domain)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0, ymax = 0.3, fill = crebbp_domain))+
+  
+  
+  geom_segment(aes(x = alignment_pos, xend = alignment_pos, y = 0.3, yend = 0.7, color = identity), alpha = 0.3)+
+  
+  
+  theme_classic2()+
+  
+  scale_y_continuous(breaks = c(0.15,0.85), labels = c("CREBBP", "EP300"))+
+  xlab("amino acid position in alignment")+ ylab("")+
+  theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())+
+
+  scale_color_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))+
+  scale_fill_manual(name  = "PFAM domain", values = presentation_palette)
+
+# only protein
+p1 <- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
+  geom_rect(data = alignment_frame%>%filter(!is.na(ep300_pos)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.7, ymax = 1), fill = "lightgrey")+
+  geom_rect(data = alignment_frame%>%filter(!is.na(ep300_domain)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.7, ymax = 1, fill = ep300_domain))+
+  
+  geom_rect(data = alignment_frame%>%filter(!is.na(crebbp_pos)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0, ymax = 0.3), fill = "lightgrey")+
+  geom_rect(data = alignment_frame%>%filter(!is.na(crebbp_domain)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0, ymax = 0.3, fill = crebbp_domain))+
+  
+
+  
+  
+  theme_classic2()+
+  
+  scale_y_continuous(breaks = c(0.15,0.85), labels = c("CREBBP", "EP300"))+
+  xlab("amino acid position in alignment")+ ylab("")+
+  theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA))+
+  xlim(c(0,2550))+
+
+  scale_fill_manual(name  = "PFAM domain", values = presentation_palette)
+
+
+ggsave("ep300_crebbp_domains_only_geomrect_small.png", p1 + theme(legend.position = "none"), 
+       width = 10, height = 1, bg = "transparent")
+ggsave("ep300_crebbp_domains_only_geomrect_large.png", p1, 
+       width = 20, height = 4, bg = "transparent")
+ggsave("ep300_crebbp_domains_only_geomrect_small.pdf", p1 + theme(legend.position = "none"), 
+       width = 10, height = 1, bg = "transparent")
+ggsave("ep300_crebbp_domains_only_geomrect_large.pdf", p1, 
+       width = 20, height = 4, bg = "transparent")
+
+
+# alignment only
+
+p2 <- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
+
+  
+  geom_rect(aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.3, ymax = 0.7, fill = identity), alpha = 0.3)+
+  
+  
+  theme_classic2()+
+  
+  scale_y_continuous(limits = c(0,1), breaks = c(0.15,0.85), labels = c("CREBBP", "EP300"))+
+  xlab("amino acid position in alignment")+ ylab("")+
+  theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA))+
+  xlim(c(0,2550))+
+
+  scale_fill_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))
+
+ggsave("ep300_crebbp_alignment_only_geomrect_small.png", p2 + theme(legend.position = "none"), 
+       width = 10, height = 1, bg = "transparent")
+ggsave("ep300_crebbp_alignment_only_geomrect_large.png", p2, 
+       width = 20, height = 4, bg = "transparent")
+ggsave("ep300_crebbp_alignment_only_geomrect_small.pdf", p2 + theme(legend.position = "none"), 
+       width = 10, height = 1, bg = "transparent")
+ggsave("ep300_crebbp_alignment_only_geomrect_large.pdf", p2,
+       width = 20, height = 4, bg = "transparent")
+
+```
+
+
+```{r plot without domains, , fig.width = 16, fig.height = 3}
+p1<- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
+  geom_rect(aes(xmin = alignment_pos, xmax = alignment_pos +0.99, ymin = 0, ymax = 1, fill = identity), alpha = 0.3)+
+  scale_fill_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))+
+  geom_point(data = alignment_frame%>%filter(!is.na(ep300_pos)), size = 0.2, pch = 15)+
+  geom_point(data = alignment_frame%>%filter(!is.na(crebbp_pos)),aes(y = 0), size = 0.2, pch = 15)+ 
+  theme_classic2()+
+  #geom_point(data = alignment_frame%>%filter(!is.na(ep300_domain)), aes(color = ep300_domain))+
+  #geom_point(data = alignment_frame%>%filter(!is.na(crebbp_domain)), aes(y = 0, color = crebbp_domain))+ 
+  #scale_color_manual(name = "domain", values = c(presentation_palette, "lightgrey"))+
+  scale_y_continuous(breaks = c(0,1), labels = c("CREBBP", "EP300"))+
+  xlab("amino acid position in alignment")+ ylab("")+
+  theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())
+
+ggsave("ep300_crebbp_alignment_small_nodomains.png", width = 10, height = 1)
+ggsave("ep300_crebbp_alignment_large_nodomains.png", width = 20, height = 4)
+ggsave("ep300_crebbp_alignment_small_nodomains.pdf", width = 10, height = 1)
+ggsave("ep300_crebbp_alignment_large_nodomains.pdf", width = 20, height = 4)
+p1
+```
+
+
+```{r plot without alignment, fig.width = 16, fig.height = 3}
+p1<- ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
+  #geom_rect(aes(xmin = alignment_pos, xmax = alignment_pos +0.99, ymin = 0, ymax = 1, fill = identity), alpha = 0.3)+
+  #scale_fill_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))+
+  geom_point(data = alignment_frame%>%filter(!is.na(ep300_pos)), size = 0.2, pch = 15)+
+  geom_point(data = alignment_frame%>%filter(!is.na(crebbp_pos)),aes(y = 0), size = 0.2, pch = 15)+ 
+  theme_classic2()+
+  geom_point(data = alignment_frame%>%filter(!is.na(ep300_domain)), aes(color = ep300_domain))+
+  geom_point(data = alignment_frame%>%filter(!is.na(crebbp_domain)), aes(y = 0, color = crebbp_domain))+ 
+  scale_color_manual(name = "domain", values = c(presentation_palette, "lightgrey"))+
+  scale_y_continuous(breaks = c(0,1), labels = c("CREBBP", "EP300"))+
+  xlab("amino acid position in alignment")+ ylab("")+
+  theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank())
+
+ggsave("ep300_crebbp_alignment_small_noalignment.png", width = 10, height = 1)
+ggsave("ep300_crebbp_alignment_large_noalignment.png", width = 20, height = 4)
+ggsave("ep300_crebbp_alignment_small_noalignment.pdf", width = 10, height = 1)
+ggsave("ep300_crebbp_alignment_large_noalignment.pdf", width = 20, height = 4)
+p1
+
+```
+
+
+
