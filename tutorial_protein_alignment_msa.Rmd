@@ -1,35 +1,42 @@
 ---
 title: "Visualising protein alignment in ggplot"
 output:
+  html_notebook:
+    toc: yes
+    toc_float: true
   html_document:
     toc: yes
     toc_float: true
     df_print: paged
-  html_notebook:
-    toc: yes
-    toc_float: true
 ---
 
-# Should this Drawing be Data?
+# The drawing that could have been a graph
 
-I love drawings. I love visiting art musea and buying postcards with drawings on them to decorate my house. I also love drawing and painting myself. 
-However, I'm a scientist in training and while I think illustrations are great to clarify concepts during presentations, to get people back on board who have kind of drifted off during your talk, or people who want to follow the main storyline of your talk.However, almost always, you will loose information in the drawing that is contained in the data underlying (as simplification is often the point). So I think we should think carefully about what should be a drawing, and what can be data represented in a graph. I think for me personally the tendency to use drawings over graphs is where my graphs are not intuitive enough or not easy enough. So maybe, if you want to make something a drawing that could be a graph, maybe your graph should be better...  and you should focus on a visualization that is easier to comprehend. So this tutorial is an example of this dilemma, where I first wanted to make an illustration showing the similary between two proteins, but this was actually due to my initial visulaisations being poor.  
+I think illustrations are great to clarify concepts during presentations. However, almost always, you will loose information in the drawing that is contained in the data underlying (as simplification is often the point of using drawings in the first place). So I think we should think carefully about what should be a drawing, and what can be data represented in a graph. I think for me personally the tendency to use drawings over graphs is where my graphs are not intuitive enough or not easy enough. So maybe, if you want to make something a drawing that could be a graph, maybe your graph should be better...  and you should focus on a visualization that is easier to comprehend. So this tutorial is an example of this dilemma, where I first wanted to make an illustration showing the similarity between two proteins, but then decided this could have been a graph. 
 
-While there are probably a thousand-and-one ways to visualise protein alignments already out there, for a presentation I made I wanted to make a super-simple one that I also liked. I wanted to be able to see in one view you where two proteins diverge in sequence and how this relates to the location of their functional domains. While you can of course show a domainogram of two proteins and just say "they are most conserved within their functional domains " , or "domain X is not conserved but domain Y is", you can also actually visualise this! And this is super-easy with ggplot. 
+While there are probably a thousand ways to visualise protein alignments already out there, I could not find the right one for a presentation I was preparing. I wanted to be able to see in one view you where two proteins diverge in sequence and how this relates to the location of their functional domains. While you can of course show a domainogram of two proteins and just say "they are most conserved within their functional domains " , or "domain X is not conserved but domain Y is", you can also actually visualise this! And this is super-easy with ggplot. 
 
-In this entry I am generating plots where you can see the alignment between two proteins (RNA polymerase II between human and fruit fly) as well as their functional domains, to get insight into whether they diverge or are more similar in their domains than in the rest of the protein. 
+
+***
+
+# Outline
+
+## Description
+
+In this entry I am generating plots where you can see the alignment between two homologous proteins (BRD2 and BRD3, both human) as well as their functional domains, to get insight into whether they diverge or are more similar in their domains than in the rest of the protein. 
 
 This actually consists of 3 steps. 
-1. Creating the protein alignment
-2. Downloading the domain annotation per protein (i.e. what are their domains called and where are they found)
+1. Creating the protein alignment from the sequence
+2. Downloading the domain annotation per protein (i.e. what are their domains called and where are located in each protein)
 3. Visualising the alignment and domain annotation (merging the two bits of information together)
 
+## Input
 
-For this R notebook I created a protein alignment in Benchling and downloaded it as .fasta. I copied the functional domain annotation from the Pfam database. These files are in this folder: they are called alignment_RPB1_drosophila_human.fasta and functional_domains.txt. 
+For this R notebook I downloaded two protein sequences as .fasta format (brd_human.fasta). 
+I copied the functional domain annotation from the Pfam database. (functional_domains.txt) 
 
-You can use any kind of website or service you like for the protein alignment of course. It is important for this notebook that both proteins in the .fasta file are equal in length: the benchling file is a .fasta file of the actual alignment (not the protein sequence itself), so there are also gaps (represented by "-") in the fasta files. 
-
-For the functional domain annotation I copied both PFAM tables for each respective protein to Excel, where I added a column indicating which of the two proteins that specific functional domain concerned. I only left the domains that were present in both proteins, but this is not neccessary. I also removed all domains I'm not interested in (i.e. "unstructured regions" etc)
+For the functional domain annotation I copied both PFAM tables for each respective protein to Excel, where I added a column indicating which of the two proteins that specific functional domain concerned. I only left the domains that were present in both proteins, but this is not neccessary. I also removed all domains I'm not interested in (i.e. "unstructured regions" etc). For accessing the PFAM entry for a specific protein, you can use the uniprot ID. 
+For BRD2 this was http://pfam.xfam.org/protein/Q15059 . You can of course use any domain database you like.
 
 
 # Preparing the workspace
@@ -83,14 +90,17 @@ ggplot(data = data.frame(x = factor(1:length(cbPalette)), y = "a"), aes(x = x , 
 
 # compute sequence alignment
 
-using MSA pacakge
+I'm using clustal omega for a sequence alignment using the msa package. (this is what Benchling uses as well). I'm extracting the protein sequences after alignment, together with the initial protein names. 
+What is very important from these resulting protein sequences is that they are the same length as they have been aligned. This is visible from the dashes, indicated gaps, compared to the other sequence.
+
+## Clustal omega alignment
+
 ```{r}
 sequences <- readAAStringSet("brd_human.fasta")
 
 alignment <- msa(sequences, "ClustalOmega")
 
 
-consensus <- msaConsensusSequence(alignment)
 
 protein_names <- names(alignment@unmasked)
 
@@ -98,12 +108,15 @@ protein_1 <- paste0(alignment@unmasked[1])
 
 protein_2 <- paste0(alignment@unmasked[2])
 
+protein_2
+
 ```
 
 
-# read in sequence alignment
+## create scores
 
-Alignment performed in using MSA, using ClustalOmega
+So I now know how they should be aligned, and I want to score each amino acid in the alignment, whether it is a gap, a match, or a mismatch.  
+In the following part, for each position i in the alignment, I'm calling whether this is a gap ( if one of the proteins have a "-" at that position), a gap, or a mismatch. 
 
 ```{r read sequence alignment}
 nchar(protein_1) == nchar(protein_2)
@@ -123,9 +136,12 @@ for(i in c(1:nchar(protein_1))){
   else{score_vec = c(score_vec, "MISMATCH")}
 
 }
-protein_1[[1]]
-substr(protein_1,1,1)
+```
 
+Using the scorevector, i'm making a dataframe.
+
+
+```{r read sequence alignment}
 alignment_frame <- data.frame( protein_1 = unlist(strsplit(protein_1, "")), 
                                protein_2 = unlist(strsplit(protein_2, "")), 
                               identity = score_vec, alignment_pos = 1:length(score_vec))
@@ -197,7 +213,8 @@ Lastly, I need to incorporate the domain annotation
 # load domain data
 
 I downloaded PFAM domain data from the PFAM database, for both BRD2 and BRD3.
-You can access the page for a single protein using the uniprot ID to search, or via the uniprot website (click (view this protein on PFAM))
+You can access the page for a single protein using the uniprot ID to search, or via the uniprot website (click (view this protein on PFAM)).
+It is easiest if the names in the protein column are the same as protein_names from the .fasta file.
 
 ```{r load functional domains}
 
@@ -263,11 +280,13 @@ You can see here that for each domain, I have every protein position that is par
 
 
 ```{r merge domain annotations and alignment}
-alignment_frame <- merge(alignment_frame, domain_annot_protein1, by.x = "protein_1_position", by.y = "position", all.x = TRUE)
+alignment_frame <- merge(alignment_frame, domain_annot_protein1, 
+                         by.x = "protein_1_position", by.y = "position", all.x = TRUE)
 
 colnames(alignment_frame)[7] = "protein_1_domain" 
 
-alignment_frame <- merge(alignment_frame, domain_annot_protein2, by.x = "protein_2_position", by.y = "position", all.x = TRUE)
+alignment_frame <- merge(alignment_frame, domain_annot_protein2, 
+                         by.x = "protein_2_position", by.y = "position", all.x = TRUE)
 
 colnames(alignment_frame)[8] = "protein_2_domain"
 
@@ -290,7 +309,7 @@ head(alignment_frame%>%filter(!is.na(protein_1_domain)))
 I am saving these plots in the working directory in small and large format, as the legend doesnt fit in the small format but is better for the alignment. 
 
 
-```{r, fig.width=13, fig.height=1.5}
+```{r, fig.width=13, fig.height=2}
 ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
   # protein 1
   geom_rect(data = alignment_frame%>%filter(!is.na(protein_1_position)),
@@ -305,7 +324,8 @@ ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
             aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.7, ymax = 1, fill = protein_2_domain))+
   
   # protein alignment
-  geom_segment(aes(x = alignment_pos, xend = alignment_pos, y = 0.3, yend = 0.7, color = identity), alpha = 0.3)+
+  geom_segment(aes(x = alignment_pos, xend = alignment_pos, y = 0.3, yend = 0.7, color = identity), 
+               alpha = 0.6)+
   
   
   theme_classic2()+
