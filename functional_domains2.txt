@@ -1,0 +1,7 @@
+Source	Domain	Start	End	Protein
+Pfam	Bromodomain	83	168	BRD2_HUMAN
+Pfam	Bromodomain	353	441	BRD2_HUMAN
+Pfam	BET	641	705	BRD2_HUMAN
+Pfam	Bromodomain	42	128	BRD3_HUMAN
+Pfam	Bromodomain	315	403	BRD3_HUMAN
+Pfam	BET	571	635	BRD3_HUMAN

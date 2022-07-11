@@ -1,0 +1,321 @@
+---
+title: "Visualising protein alignment in ggplot"
+output:
+  html_document:
+    toc: yes
+    toc_float: true
+    df_print: paged
+  html_notebook:
+    toc: yes
+    toc_float: true
+---
+
+# Should this Drawing be Data?
+
+I love drawings. I love visiting art musea and buying postcards with drawings on them to decorate my house. I also love drawing and painting myself. 
+However, I'm a scientist in training and while I think illustrations are great to clarify concepts during presentations, to get people back on board who have kind of drifted off during your talk, or people who want to follow the main storyline of your talk.However, almost always, you will loose information in the drawing that is contained in the data underlying (as simplification is often the point). So I think we should think carefully about what should be a drawing, and what can be data represented in a graph. I think for me personally the tendency to use drawings over graphs is where my graphs are not intuitive enough or not easy enough. So maybe, if you want to make something a drawing that could be a graph, maybe your graph should be better...  and you should focus on a visualization that is easier to comprehend. So this tutorial is an example of this dilemma, where I first wanted to make an illustration showing the similary between two proteins, but this was actually due to my initial visulaisations being poor.  
+
+While there are probably a thousand-and-one ways to visualise protein alignments already out there, for a presentation I made I wanted to make a super-simple one that I also liked. I wanted to be able to see in one view you where two proteins diverge in sequence and how this relates to the location of their functional domains. While you can of course show a domainogram of two proteins and just say "they are most conserved within their functional domains " , or "domain X is not conserved but domain Y is", you can also actually visualise this! And this is super-easy with ggplot. 
+
+In this entry I am generating plots where you can see the alignment between two proteins (RNA polymerase II between human and fruit fly) as well as their functional domains, to get insight into whether they diverge or are more similar in their domains than in the rest of the protein. 
+
+This actually consists of 3 steps. 
+1. Creating the protein alignment
+2. Downloading the domain annotation per protein (i.e. what are their domains called and where are they found)
+3. Visualising the alignment and domain annotation (merging the two bits of information together)
+
+
+For this R notebook I created a protein alignment in Benchling and downloaded it as .fasta. I copied the functional domain annotation from the Pfam database. These files are in this folder: they are called alignment_RPB1_drosophila_human.fasta and functional_domains.txt. 
+
+You can use any kind of website or service you like for the protein alignment of course. It is important for this notebook that both proteins in the .fasta file are equal in length: the benchling file is a .fasta file of the actual alignment (not the protein sequence itself), so there are also gaps (represented by "-") in the fasta files. 
+
+For the functional domain annotation I copied both PFAM tables for each respective protein to Excel, where I added a column indicating which of the two proteins that specific functional domain concerned. I only left the domains that were present in both proteins, but this is not neccessary. I also removed all domains I'm not interested in (i.e. "unstructured regions" etc)
+
+
+# Preparing the workspace
+
+Loading required libraries
+```{r load libraries, message = FALSE}
+
+
+library(seqinr)
+#library(Biostrings)
+library(stringr)
+library(tidyverse)
+library(ggrepel)
+library(gridExtra)
+library(reshape2)
+library(ggpubr)
+library(msa)
+
+# library(zoo)
+# library(labeling)
+
+
+
+options(bitmapType = 'cairo')
+
+```
+
+Set working directories with data sources
+
+```{r set working directories, fig.height=3}
+
+
+
+cbPalette_Grey <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+cbPalette <- c( "#E69F00",  "#009E73","#56B4E9", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+
+
+ggplot(data = data.frame(x = factor(1:length(cbPalette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = cbPalette)+ theme_classic2()
+
+# cbPalette <- c("#264653", "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#8B9F72")
+# 
+# ggplot(data = data.frame(x = factor(1:length(cbPalette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = cbPalette)
+
+# green-ish color for position 3 "#9abf78"
+
+#load("motif_analysis.Rdata")
+```
+
+
+# compute sequence alignment
+
+using MSA pacakge
+```{r}
+sequences <- readAAStringSet("brd_human.fasta")
+
+alignment <- msa(sequences, "ClustalOmega")
+
+
+consensus <- msaConsensusSequence(alignment)
+
+protein_names <- names(alignment@unmasked)
+
+protein_1 <- paste0(alignment@unmasked[1])
+
+protein_2 <- paste0(alignment@unmasked[2])
+
+```
+
+
+# read in sequence alignment
+
+Alignment performed in using MSA, using ClustalOmega
+
+```{r read sequence alignment}
+nchar(protein_1) == nchar(protein_2)
+
+score_vec <- c()
+
+for(i in c(1:nchar(protein_1))){
+  if(substr(protein_1, i,i)== "-" | substr(protein_2,i,i) == "-"){
+    score_vec = c(score_vec, "GAP")
+  }
+  
+  
+  else if(substr(protein_1,i,i)==substr(protein_2,i,i)){
+    score_vec = c(score_vec, "MATCH")
+  }
+  
+  else{score_vec = c(score_vec, "MISMATCH")}
+
+}
+protein_1[[1]]
+substr(protein_1,1,1)
+
+alignment_frame <- data.frame( protein_1 = unlist(strsplit(protein_1, "")), 
+                               protein_2 = unlist(strsplit(protein_2, "")), 
+                              identity = score_vec, alignment_pos = 1:length(score_vec))
+
+
+head(alignment_frame)
+```
+
+
+I now need to incorporate the positiion of each protein into the alignment dataframe. For example, with this alignment
+
+```
+protA   MM-KM
+        || *|
+protB   MMLSM
+```
+This alignment is 5 AAs long, but the position in protA at the end is only position 4, as there is a gap in the alignment. This is important for the correct annotation of the domains, as I have the domain location only for the original protein position, and not for the alignment position (obviously). So this hypothetical alignment should result in the following dataframe:
+
+```
+alignment_pos   protA   protB   pos_protA   pos_protB
+1               M       M       1           1
+2               M       M       2           2
+3                       L                   3
+4               K       S       3           4
+5               M       M       4           5
+```
+
+Here I make a function to find for each amino acid in each protein its amino acid position. Essentially, it is a counter function that only adds a number if the amino acid is not equal to "-", which indicates a gap. 
+
+```{r create alignment position conversion}
+find_protein_position <- function(column){
+  
+  position_vector = c()
+  
+  for(i in 1:length(column)){
+    
+    if(column[i] == "-"){
+      position_vector <- c(position_vector, NA)
+      #print(paste0("it ", i , " branch 1"))
+    }
+    else{
+      # with this if statement im cathcing the first value that is not NA
+      if(is.null(position_vector)|all(is.na(position_vector))){
+        position_vector = c(position_vector, 1)
+      #print(paste0("it ", i , " branch 2.1"))
+      }
+      else{position_vector <- c(position_vector, max(position_vector, na.rm = TRUE)+1)
+      #print(paste0("it ", i , " branch 2.2"))
+      }
+    }
+      
+   
+  }
+  return(position_vector)
+  }
+
+alignment_frame$protein_1_position = find_protein_position(alignment_frame$protein_1)
+
+alignment_frame$protein_2_position = find_protein_position(alignment_frame$protein_2)
+
+head(alignment_frame)
+```
+
+You can see here that due to the gap in the alignment in protein 2 at the start the counter does not start yet.
+
+
+Lastly, I need to incorporate the domain annotation  
+
+# load domain data
+
+I downloaded PFAM domain data from the PFAM database, for both BRD2 and BRD3.
+You can access the page for a single protein using the uniprot ID to search, or via the uniprot website (click (view this protein on PFAM))
+
+```{r load functional domains}
+
+
+domain_annot <- read.table("functional_domains2.txt", header = TRUE)
+
+head(domain_annot)
+```
+
+Domain_annot is now in the form: 
+```
+name        start       end
+domainA     3           5
+
+```
+whereas I need it to be like this: 
+```
+position    domain
+1
+2
+3           domainA
+4           domainA
+5           domainA
+6
+```
+
+In that way I can merge it with the sequence alignment, where I have the position per protein, and the position in the alignment. When I combine these two I will get the position of the domains in the alignment.
+
+```{r convert domains to long format}
+
+
+create_long_annotation <- function(function_domain_df){
+  
+  domain_vec <- c()
+  position_vec <- c()
+  
+  for(i in 1:length(function_domain_df$Domain)){
+    
+    domain_vec <- c(domain_vec, rep(function_domain_df$Domain[i],
+                                    length(function_domain_df$Start[i]:function_domain_df$End[i])))
+    
+    position_vec <- c(position_vec, function_domain_df$Start[i]:function_domain_df$End[i] )
+    
+  }
+  
+  return(data.frame(domain=  domain_vec, position = position_vec))
+  
+}
+
+
+
+domain_annot_protein1 <- create_long_annotation(domain_annot%>%filter(Protein == protein_names[1]))
+
+domain_annot_protein2 <- create_long_annotation(domain_annot%>%filter(Protein == 
+                                                                        protein_names[2]))
+
+head(domain_annot_protein1)
+
+```
+
+You can see here that for each domain, I have every protein position that is part of that domain.
+
+
+
+```{r merge domain annotations and alignment}
+alignment_frame <- merge(alignment_frame, domain_annot_protein1, by.x = "protein_1_position", by.y = "position", all.x = TRUE)
+
+colnames(alignment_frame)[7] = "protein_1_domain" 
+
+alignment_frame <- merge(alignment_frame, domain_annot_protein2, by.x = "protein_2_position", by.y = "position", all.x = TRUE)
+
+colnames(alignment_frame)[8] = "protein_2_domain"
+
+write.table(alignment_frame, "alignment_dataframe.txt")
+
+alignment_frame <- alignment_frame%>%arrange(alignment_pos)
+
+head(alignment_frame)
+```
+There are no domains in the N terminus of the proteins, but when filtering for the top tomain in the first protein we find this annotation: 
+
+```{r}
+head(alignment_frame%>%filter(!is.na(protein_1_domain)))
+```
+
+
+
+# Plotting the result 
+
+I am saving these plots in the working directory in small and large format, as the legend doesnt fit in the small format but is better for the alignment. 
+
+
+```{r, fig.width=13, fig.height=1.5}
+ggplot(data = alignment_frame, aes(x = alignment_pos, y = 1))+
+  # protein 1
+  geom_rect(data = alignment_frame%>%filter(!is.na(protein_1_position)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0, ymax = 0.3), fill = "lightgrey")+
+  geom_rect(data = alignment_frame%>%filter(!is.na(protein_1_domain)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0, ymax = 0.3, fill = protein_1_domain))+
+  
+  # protein 2
+  geom_rect(data = alignment_frame%>%filter(!is.na(protein_2_position)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.7, ymax = 1), fill = "lightgrey")+
+  geom_rect(data = alignment_frame%>%filter(!is.na(protein_2_domain)),
+            aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.7, ymax = 1, fill = protein_2_domain))+
+  
+  # protein alignment
+  geom_segment(aes(x = alignment_pos, xend = alignment_pos, y = 0.3, yend = 0.7, color = identity), alpha = 0.3)+
+  
+  
+  theme_classic2()+
+  
+  # scale and legend
+  scale_y_continuous(breaks = c(0.15,0.85), labels = protein_names)+
+  xlab("amino acid position in alignment")+ ylab("")+
+  theme(panel.border = element_blank(), axis.line = element_line(color = "white"), axis.ticks = element_blank(), legend.text = element_text(size = 7), legend.key.size = unit(0.4, "cm"))+
+
+  scale_color_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))+
+  scale_fill_manual(name  = "PFAM domain", values = cbPalette)
+```
+
