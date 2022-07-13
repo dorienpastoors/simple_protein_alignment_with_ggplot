@@ -10,13 +10,17 @@ output:
     toc_float: true
 ---
 
-# The drawing that could have been... a graph
+# The drawing that should  be a graph
 
 ![](meme_graph.png){width=30%}
 
-When using drawings instead of graphs, almost always, you will loose information in the drawing that is contained in the data underlying (as simplification is often the point of using drawings in the first place). This tutorial is an example of this dilemma, where I first wanted to make an illustration showing the similarity between two proteins, but then decided this could, and should in fact be, a graph. 
+When using drawings instead of graphs, almost always, you will loose information in the drawing that is contained in the underlying data (as simplification is often the point of using drawings in the first place). This tutorial is an example of this dilemma, where I first wanted to make an illustration showing the similarity between two proteins, but then decided this could, and should in fact be, a graph. 
 
-While there are probably a thousand ways to visualise protein alignments already out there, I could not find one that was simple enough so I decided to make my own. I wanted to be able to see in one view you where two proteins diverge in sequence and how this relates to the location of their functional domains. While you can of course show a domainogram of two proteins and just say "they are most conserved within their functional domains " , or "domain X is not conserved but domain Y is", you can also actually visualise this! And for me this made it actually also much more clear for myself. 
+While there are probably a thousand ways to visualise protein alignments already out there, I could not find one that was simple enough for an introductory slide so I decided to make my own. I wanted to be able to see in one view you where two proteins diverge in sequence and how this relates to the location of their functional domains. While you can of course show a domainogram of two proteins and just say "they are most conserved within their functional domains " , or "domain X is not conserved but domain Y is", you can also actually visualise this! And for me this made it actually also much more clear for myself. 
+
+***
+
+![](protein_alignment_example.png){width=150%}
 
 
 ***
@@ -28,7 +32,7 @@ While there are probably a thousand ways to visualise protein alignments already
 In this markdown I am generating plots where you can see the alignment between two homologous proteins (BRD2 and BRD3, both human) as well as their functional domains, to get visual insight into whether they diverge or are more similar in their domains than in the rest of the protein. 
 
 This actually consists of 3 steps. 
-1. Creating the protein alignment from the sequence
+1. Creating the protein alignment from the sequences
 2. Downloading the domain annotation per protein (i.e. what are their domains called and where are located in each protein)
 3. Visualising the alignment and domain annotation (merging the two bits of information together)
 
@@ -38,11 +42,15 @@ For this R notebook I downloaded two protein sequences as .fasta format (brd_hum
 I copied the functional domain annotation from the Pfam database. (functional_domains.txt) 
 
 For the functional domain annotation I copied both PFAM tables for each respective protein to Excel, where I added a column indicating which of the two proteins that specific functional domain concerned. I only left the domains that were present in both proteins, but this is not necessary. I also removed all domains I'm not interested in (i.e. "unstructured regions" etc). For accessing the PFAM entry for a specific protein, you can use the UniProt ID. 
-For BRD2 this was http://Pfam.Pfam.org/protein/Q15059 . You can of course use any domain database you like.
+For BRD2 this was http://Pfam.Pfam.org/protein/Q15059 . You can of course use any domain database. I've made an extra column for the protein concerned (see the excel file as example.)
 
 
 # Preparing the workspace
+
+
 ```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# install packages
+
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
@@ -66,28 +74,19 @@ library(ggpubr)
 library(msa)
 library(ggnewscale)
 
-
-
-
 options(bitmapType = 'cairo')
 
 ```
 
 Define colors used for plot
 
-```{r set working directories, fig.height=3}
-
-
+```{r set colors, fig.height=3}
 
 cbPalette_Grey <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
 cbPalette <- c( "#E69F00",  "#009E73","#56B4E9", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
-
-
 ggplot(data = data.frame(x = factor(1:length(cbPalette)), y = "a"), aes(x = x , y = y)) + geom_tile(aes(fill = x)) + scale_fill_manual(values = cbPalette)+ theme_classic2()
-
-
 ```
 
 
@@ -98,7 +97,7 @@ What is very important from these resulting protein sequences is that they are t
 
 ## Clustal omega alignment
 
-```{r}
+```{r seq alignment}
 sequences <- readAAStringSet("brd_human.fasta")
 
 alignment <- msa(sequences, "ClustalOmega")
@@ -141,7 +140,7 @@ for(i in c(1:nchar(protein_1))){
 }
 ```
 
-Using the scorevector, I'm making a datafram comtaining the aligned protein sequences. Each row is 1 amino acid in the alignment
+Using the scorevector, I'm making a dataframe containing the aligned protein sequences. Each row is 1 amino acid in the alignment
 
 
 ```{r sequence alignment to dataframe}
@@ -316,14 +315,14 @@ The ggplot code has a lot of layers and I've edited the theme to make the final 
 It is essentially an XY graph where each object is a square (drawn with geom_rect). The x position is always the position in the alignment. The y coordinate is hidden (it is just for making the outlines of the rectangles) but I've also included a plot below where you can see the coordinates if you want to modify the plot yourself.
 
 
-```{r, fig.width=13, fig.height=2}
+```{r plot, fig.width=13, fig.height=2}
 
 
 ggplot(data = alignment_frame)+
   
   # protein alignment
   geom_rect(aes(xmin = alignment_pos-1, xmax = alignment_pos, ymin = 0.2, ymax = 0.8, fill = identity), 
-            alpha = 0.5, color = NA)+
+            alpha = 0.4, color = NA)+
   scale_fill_manual(name = "alignment", values = c("white", "chartreuse4", "coral"))+
   
   
