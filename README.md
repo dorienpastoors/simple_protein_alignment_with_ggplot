@@ -6,7 +6,7 @@ this repository contains the following files
 
 - tutorial_protein_alignment_msa.html is the HTML version of the tutorial
 - protein_alignment.png and protein_alignment_example.png are the output plots (* they are the same but you wont accidentaly overwrite the plot in this way)
-- example_gating.png shows the sample gating made in flowjo.
+
 
 input data in this folder
 - brd_human.fasta are the two protein sequences to be aligned
